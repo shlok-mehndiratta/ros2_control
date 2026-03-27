@@ -15,6 +15,8 @@
 #ifndef CONTROLLER_MANAGER__CONTROLLER_MANAGER_HPP_
 #define CONTROLLER_MANAGER__CONTROLLER_MANAGER_HPP_
 
+#include <atomic>
+#include <chrono>
 #include <map>
 #include <memory>
 #include <string>
@@ -644,6 +646,8 @@ private:
   std::mutex services_lock_;
   rclcpp::Publisher<controller_manager_msgs::msg::ControllerManagerActivity>::SharedPtr
     controller_manager_activity_publisher_;
+  std::atomic<bool> status_update_needed_{false};
+  rclcpp::TimerBase::SharedPtr status_publisher_timer_;
   rclcpp::Service<controller_manager_msgs::srv::ListControllers>::SharedPtr
     list_controllers_service_;
   rclcpp::Service<controller_manager_msgs::srv::ListControllerTypes>::SharedPtr

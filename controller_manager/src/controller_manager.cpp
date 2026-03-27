@@ -636,9 +636,19 @@ void ControllerManager::init_controller_manager()
     create_publisher<controller_manager_msgs::msg::ControllerManagerActivity>(
       "~/activity", rclcpp::QoS(1).reliable().transient_local());
   rt_controllers_wrapper_.set_on_switch_callback(
-    std::bind(&ControllerManager::publish_activity, this));
+    [this]() { status_update_needed_.store(true, std::memory_order_relaxed); });
   resource_manager_->set_on_component_state_switch_callback(
-    std::bind(&ControllerManager::publish_activity, this));
+    [this]() { status_update_needed_.store(true, std::memory_order_relaxed); });
+
+  status_publisher_timer_ = create_timer(
+    get_clock(), std::chrono::milliseconds(100),
+    [this]()
+    {
+      if (status_update_needed_.exchange(false, std::memory_order_acquire))
+      {
+        publish_activity();
+      }
+    });
 
   // Get parameters needed for RT "update" loop to work
   if (is_resource_manager_initialized())
@@ -3366,7 +3376,7 @@ controller_interface::return_type ControllerManager::update(
         controller_manager_msgs::srv::SwitchController::Request::STRICT);
     }
     // To publish the activity of the failing controllers and the fallback controllers
-    publish_activity();
+    status_update_needed_.store(true, std::memory_order_relaxed);
   }
   resource_manager_->enforce_command_limits(period);
 
