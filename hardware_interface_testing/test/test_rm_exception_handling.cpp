@@ -850,3 +850,128 @@ TEST_F(TestResourceManagerExceptionHandling, sensor_read_unknown_exception)
   EXPECT_ANY_THROW(
     rm.read(rclcpp::Time(0, 0, RCL_STEADY_TIME), rclcpp::Duration::from_seconds(0.01)));
 }
+// ---------------------------------------------------------------------------
+// 18. Targeted Coverage Hardening (Conservative Section)
+// ---------------------------------------------------------------------------
+
+// Covers: test_rm_exception_handling.cpp:103 (empty extra_params)
+// Covers: Partial checks for params.count(throw_key) across all mocks
+// Covers: test_actuator.cpp:63 (does_not_exist interface name)
+TEST_F(TestResourceManagerExceptionHandling, baseline_and_utility_hardened)
+{
+  params_.robot_description = make_urdf(ACTUATOR_HW);  // No extra_params
+  EXPECT_NO_THROW({ ResourceManager rm(params_, true); });
+
+  // Trigger the return ERROR in test_actuator on_init via bad interface name
+  const char * const BAD_INTF_HW =
+    R"(
+    <ros2_control name="BadIntfHW" type="actuator">
+      <hardware><plugin>test_actuator</plugin></hardware>
+      <joint name="joint1">
+        <state_interface name="position"/>
+        <state_interface name="does_not_exist"/>
+      </joint>
+    </ros2_control>)";
+  params_.robot_description = make_urdf(BAD_INTF_HW);
+  params_.handle_exceptions = false;
+  EXPECT_ANY_THROW({ ResourceManager rm(params_, true); });
+}
+
+// Covers: is_async partials in test_system.cpp and test_actuator.cpp
+TEST_F(TestResourceManagerExceptionHandling, async_component_verification)
+{
+  // Combined URDF with System and Actuator to hit both async branches
+  params_.robot_description =
+    std::string(ros2_control_test_assets::urdf_head) +
+    "  <ros2_control name=\"TestSystemHardware\" type=\"system\">\n"
+    "    <hardware>\n"
+    "      <plugin>test_system</plugin>\n"
+    "      <param name=\"is_async\">true</param>\n"
+    "    </hardware>\n"
+    "    <joint name=\"joint1\">\n"
+    "      <command_interface name=\"position\"/>\n"
+    "      <state_interface name=\"position\"/>\n"
+    "    </joint>\n"
+    "  </ros2_control>\n"
+    "  <ros2_control name=\"TestActuatorHardware\" type=\"actuator\">\n"
+    "    <hardware>\n"
+    "      <plugin>test_actuator</plugin>\n"
+    "      <param name=\"is_async\">true</param>\n"
+    "    </hardware>\n"
+    "    <joint name=\"joint1\">\n"
+    "      <command_interface name=\"position\"/>\n"
+    "      <state_interface name=\"position\"/>\n"
+    "    </joint>\n"
+    "  </ros2_control>\n" +
+    ros2_control_test_assets::urdf_tail;
+
+  ResourceManager rm(params_, true);
+  rclcpp_lifecycle::State inactive_state(
+    lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE, "inactive");
+  rclcpp_lifecycle::State active_state(
+    lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE, "active");
+
+  rm.set_component_state("TestSystemHardware", inactive_state);
+  rm.set_component_state("TestSystemHardware", active_state);
+  rm.set_component_state("TestActuatorHardware", inactive_state);
+  rm.set_component_state("TestActuatorHardware", active_state);
+
+  rm.read(rclcpp::Time(0, 0, RCL_STEADY_TIME), rclcpp::Duration::from_seconds(0.01));
+  rm.write(rclcpp::Time(0, 0, RCL_STEADY_TIME), rclcpp::Duration::from_seconds(0.01));
+}
+
+// Covers: test_sensor.cpp:45, test_actuator.cpp:56 (on_init ERROR returns)
+TEST_F(TestResourceManagerExceptionHandling, plugin_init_failure_hardened)
+{
+  const char * const UNINIT_HW =
+    R"(
+    <ros2_control name="UninitHW" type="actuator">
+      <hardware>
+        <plugin>test_uninitializable_actuator</plugin>
+        <param name="throw_on_on_init">true</param>
+      </hardware>
+      <joint name="joint1">
+        <command_interface name="position"/>
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
+    </ros2_control>)";
+  params_.robot_description = make_urdf(UNINIT_HW);
+  params_.handle_exceptions = false;
+  EXPECT_ANY_THROW({ ResourceManager rm(params_, true); });
+
+  const char * const UNINIT_SENSOR_HW =
+    R"(
+    <ros2_control name="UninitSensorHW" type="sensor">
+      <hardware>
+        <plugin>test_uninitializable_sensor</plugin>
+        <param name="throw_on_on_init">true</param>
+      </hardware>
+      <sensor name="sensor1">
+        <state_interface name="velocity"/>
+      </sensor>
+    </ros2_control>)";
+  params_.robot_description = make_urdf(UNINIT_SENSOR_HW);
+  EXPECT_ANY_THROW({ ResourceManager rm(params_, true); });
+}
+
+// Covers: test_sensor.cpp:104-107, test_actuator.cpp:120 (on_error)
+TEST_F(TestResourceManagerExceptionHandling, sensor_and_actuator_on_error_hardened)
+{
+  params_.robot_description = make_urdf(
+    SENSOR_HW,
+    "      <param name=\"throw_on_on_configure\">true</param>");
+  
+  // MUST use handle_exceptions=true to trigger the mock's on_error call
+  params_.handle_exceptions = true;
+  ResourceManager rm_sens(params_, true);
+  rclcpp_lifecycle::State inactive_state(
+    lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE, "inactive");
+  EXPECT_EQ(rm_sens.set_component_state("TestSensorHardware", inactive_state), return_type::ERROR);
+
+  params_.robot_description = make_urdf(
+    ACTUATOR_HW,
+    "      <param name=\"throw_on_on_configure\">true</param>");
+  ResourceManager rm_act(params_, true);
+  EXPECT_EQ(rm_act.set_component_state("TestActuatorHardware", inactive_state), return_type::ERROR);
+}

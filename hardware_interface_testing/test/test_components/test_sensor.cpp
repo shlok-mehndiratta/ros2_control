@@ -24,6 +24,7 @@ using hardware_interface::StateInterface;
 
 class TestSensor : public SensorInterface
 {
+public:
   void check_injected_failure(const std::string & method_name) const
   {
     const auto & info = get_hardware_info();
@@ -134,7 +135,10 @@ class TestUninitializableSensor : public TestSensor
   CallbackReturn on_init(
     const hardware_interface::HardwareComponentInterfaceParams & params) override
   {
-    SensorInterface::on_init(params);
+    if (TestSensor::on_init(params) != CallbackReturn::SUCCESS)
+    {
+      return CallbackReturn::ERROR;
+    }
     return CallbackReturn::ERROR;
   }
 };

@@ -26,6 +26,7 @@ using hardware_interface::StateInterface;
 
 class TestActuator : public ActuatorInterface
 {
+public:
   void check_injected_failure(const std::string & method_name) const
   {
     const auto & info = get_hardware_info();
@@ -291,7 +292,10 @@ class TestUninitializableActuator : public TestActuator
   CallbackReturn on_init(
     const hardware_interface::HardwareComponentInterfaceParams & params) override
   {
-    ActuatorInterface::on_init(params);
+    if (TestActuator::on_init(params) != CallbackReturn::SUCCESS)
+    {
+      return CallbackReturn::ERROR;
+    }
     return CallbackReturn::ERROR;
   }
 };

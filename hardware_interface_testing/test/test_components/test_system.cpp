@@ -40,6 +40,7 @@ void verify_internal_lifecycle_id(uint8_t expected_id, uint8_t actual_id)
 
 class TestSystem : public SystemInterface
 {
+public:
   void check_injected_failure(const std::string & method_name) const
   {
     const auto & info = get_hardware_info();
@@ -296,7 +297,10 @@ class TestUninitializableSystem : public TestSystem
   CallbackReturn on_init(
     const hardware_interface::HardwareComponentInterfaceParams & params) override
   {
-    SystemInterface::on_init(params);
+    if (TestSystem::on_init(params) != CallbackReturn::SUCCESS)
+    {
+      return CallbackReturn::ERROR;
+    }
     return CallbackReturn::ERROR;
   }
 };
